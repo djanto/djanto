@@ -17,7 +17,7 @@ const SATUAN = {
 };
 
 function defaultState() {
-  return { versi: 1, namaUsaha: '', bahan: [], belanja: [], menu: [], jualan: [], koreksi: [] };
+  return { versi: 1, namaUsaha: '', bahan: [], belanja: [], menu: [], jualan: [], koreksi: [], rencana: [] };
 }
 
 function load() {
@@ -235,7 +235,7 @@ function ringkasan(dari, sampai) {
 
 const $app = document.getElementById('app');
 let view = 'beranda';
-const ui = { jualanTanggal: today(), periode: '7', draftMenu: null, bahanBaru: false };
+const ui = { jualanTanggal: today(), periode: '7', draftMenu: null, bahanBaru: false, tabBelanja: 'daftar' };
 
 function go(v) {
   view = v;
@@ -309,7 +309,12 @@ function viewBelanja() {
   const opsiSatuan = Object.keys(SATUAN).map((s) => `<option value="${s}">${s}</option>`).join('');
   const bahanBaru = ui.bahanBaru || state.bahan.length === 0;
 
+  const tab = (v, l) => `<button class="chip ${ui.tabBelanja === v ? 'active' : ''}" data-action="tab-belanja" data-v="${v}">${l}</button>`;
   let html = `<h1>Belanja bahan</h1>
+  <div class="chips">${tab('daftar', 'Daftar belanja')}${tab('catat', 'Catat langsung')}</div>`;
+
+  if (ui.tabBelanja === 'daftar') html += viewDaftarBelanja(opsiBahan, opsiSatuan);
+  else html += `
   <form class="card" data-form="belanja">
     <label for="b-tgl">Tanggal</label>
     <input id="b-tgl" name="tanggal" type="date" value="${today()}" required>
@@ -357,6 +362,119 @@ function viewBelanja() {
       }).join('') + `</ul></div>`;
   }
   return html;
+}
+
+// Daftar belanja: disusun dulu dengan harga kosong, diisi saat di pasar.
+function perkiraanRencana(item) {
+  const b = item.bahanId && cariBahan(item.bahanId);
+  const jumlah = numJumlah(item.jumlah);
+  return b && b.harga && jumlah > 0 ? jumlah * b.harga : 0;
+}
+
+function totalRencana() {
+  let perkiraan = 0;
+  let dibayar = 0;
+  for (const r of state.rencana) {
+    perkiraan += num(r.total) > 0 ? num(r.total) : perkiraanRencana(r);
+    dibayar += num(r.total);
+  }
+  return { perkiraan, dibayar };
+}
+
+function teksTotalRencana() {
+  const t = totalRencana();
+  return `Perkiraan uang dibawa: <b>${rp(t.perkiraan)}</b> · Sudah dibayar: <b>${rp(t.dibayar)}</b>`;
+}
+
+function linkDaftarWhatsApp() {
+  const baris = state.rencana.map((r) => {
+    const jml = numJumlah(r.jumlah) > 0 ? ` ${angka(numJumlah(r.jumlah))} ${r.satuan}` : '';
+    return `☐ ${r.nama}${jml}`;
+  });
+  const teks = [`*Daftar belanja ${state.namaUsaha || ''}*`.replace(' *', '*'), fmtTanggal(today()), ...baris, '', `Perkiraan: ${rp(totalRencana().perkiraan)}`].join('\n');
+  return 'https://wa.me/?text=' + encodeURIComponent(teks);
+}
+
+function teksPerkiraan(item) {
+  const b = item.bahanId && cariBahan(item.bahanId);
+  if (num(item.total) > 0 && numJumlah(item.jumlah) > 0) return `Harga jadi ${rp(num(item.total) / numJumlah(item.jumlah))}/${item.satuan}`;
+  if (!b || !b.harga) return 'Belum ada harga sebelumnya';
+  const p = perkiraanRencana(item);
+  return p ? `Perkiraan ${rp(p)} (terakhir ${rp(b.harga)}/${b.satuan})` : `Harga terakhir ${rp(b.harga)}/${b.satuan}`;
+}
+
+function viewDaftarBelanja(opsiBahan, opsiSatuan) {
+  const baruSaja = state.bahan.length === 0;
+  const items = state.rencana.map((r) => {
+    const b = r.bahanId && cariBahan(r.bahanId);
+    return `<div class="rencana-item">
+      <div class="row" style="align-items:center">
+        <div><b>${esc(r.nama)}</b>${b ? ` <span class="muted">· sisa ±${angka(stokBahan(b.id))} ${r.satuan}</span>` : ''}</div>
+        <button class="btn small shrink danger" data-action="hapus-rencana" data-id="${r.id}" aria-label="Hapus dari daftar">✕</button>
+      </div>
+      <div class="row">
+        <div><label for="rj-${r.id}">Jumlah (${r.satuan})</label><input id="rj-${r.id}" inputmode="decimal" value="${esc(r.jumlah)}" placeholder="—" data-rencana="${r.id}" data-field="jumlah"></div>
+        <div><label for="rt-${r.id}">Harga bayar (Rp)</label><input id="rt-${r.id}" inputmode="numeric" value="${esc(r.total)}" placeholder="belum diisi" data-rencana="${r.id}" data-field="total"></div>
+        <button class="btn primary shrink" data-action="beli-rencana" data-id="${r.id}" aria-label="Simpan ke catatan belanja">✓</button>
+      </div>
+      <p class="muted" id="rp-${r.id}">${teksPerkiraan(r)}</p>
+    </div>`;
+  }).join('');
+
+  let html = `<div class="card">
+    <h2 style="margin-top:0">Daftar belanja</h2>
+    <p class="muted">Susun daftar di rumah, harga dikosongkan dulu. Di pasar, isi jumlah dan harga yang dibayar, lalu tekan ✓.</p>`;
+
+  if (items) {
+    html += `${items}
+    <p id="rencana-total">${teksTotalRencana()}</p>
+    <button class="btn primary block" data-action="beli-semua-rencana">Simpan semua yang sudah diisi</button>
+    <div class="row" style="margin-top:8px">
+      <a class="btn" id="rencana-wa" href="${linkDaftarWhatsApp()}" target="_blank" rel="noopener">Kirim ke WhatsApp</a>
+      <button class="btn danger" data-action="kosongkan-rencana">Kosongkan</button>
+    </div>`;
+  } else {
+    html += `<p class="muted"><i>Daftar masih kosong.</i></p>`;
+  }
+  html += `</div>
+
+  <form class="card" data-form="rencana">
+    <h2 style="margin-top:0">Tambah ke daftar</h2>
+    <label for="r-bahan">Bahan</label>
+    <select id="r-bahan" name="bahanId" data-change="pilih-bahan-rencana">
+      ${opsiBahan}
+      <option value="__baru" ${baruSaja ? 'selected' : ''}>+ Bahan baru…</option>
+    </select>
+    <div id="r-bahan-baru" class="${baruSaja ? '' : 'hidden'}">
+      <div class="row">
+        <div><label for="r-nama">Nama bahan</label><input id="r-nama" name="nama" placeholder="mis. Daging sapi"></div>
+        <div class="shrink" style="width:120px"><label for="r-satuan">Satuan</label><select id="r-satuan" name="satuan">${opsiSatuan}</select></div>
+      </div>
+    </div>
+    <label for="r-jml">Jumlah (boleh dikosongkan)</label>
+    <input id="r-jml" name="jumlah" inputmode="decimal" placeholder="mis. 2">
+    <button class="btn primary block" type="submit">Tambah ke daftar</button>
+    ${state.bahan.length ? `<button type="button" class="btn block" data-action="rencana-semua-bahan">Tambah semua bahan yang biasa dibeli</button>` : ''}
+  </form>`;
+  return html;
+}
+
+function beliRencana(r) {
+  const jumlah = numJumlah(r.jumlah);
+  const total = num(r.total);
+  if (jumlah <= 0 || total <= 0) return false;
+  let b = r.bahanId && cariBahan(r.bahanId);
+  if (!b) {
+    b = state.bahan.find((x) => x.nama.toLowerCase() === r.nama.toLowerCase() && x.satuan === r.satuan);
+    if (!b) {
+      b = { id: uid(), nama: r.nama, satuan: r.satuan, harga: 0 };
+      state.bahan.push(b);
+    }
+  }
+  b.harga = total / jumlah;
+  state.belanja.push({ id: uid(), tanggal: today(), bahanId: b.id, jumlah, totalHarga: total });
+  state.rencana = state.rencana.filter((x) => x.id !== r.id);
+  return true;
 }
 
 function viewMenu() {
@@ -551,7 +669,7 @@ function viewPengaturan() {
     <p class="muted">Tidak bisa dibatalkan. Simpan cadangan dulu.</p>
     <button class="btn danger block" data-action="hapus-semua">Hapus semua data</button>
   </div>
-  <p class="muted">Dagangku versi 0.1 · data tidak dikirim ke mana pun.</p>`;
+  <p class="muted">Dagangku versi 0.2 · data tidak dikirim ke mana pun.</p>`;
 }
 
 /* ---------- Aksi ---------- */
@@ -622,6 +740,34 @@ function catatJualan(tanggal, menu, dibuat, terjual) {
 const actions = {
   contoh() { isiContoh(); toast('Contoh data dimuat'); render(); },
   periode(el) { ui.periode = el.dataset.v; render(); },
+  'tab-belanja'(el) { ui.tabBelanja = el.dataset.v; render(); },
+  'beli-rencana'(el) {
+    const r = state.rencana.find((x) => x.id === el.dataset.id);
+    if (!beliRencana(r)) return toast(`Isi jumlah dan harga bayar ${r.nama} dulu`);
+    save(); render(); toast(`${r.nama} masuk catatan belanja`);
+  },
+  'beli-semua-rencana'() {
+    const terisi = state.rencana.filter((r) => numJumlah(r.jumlah) > 0 && num(r.total) > 0);
+    if (!terisi.length) return toast('Belum ada yang diisi jumlah dan harganya');
+    terisi.forEach(beliRencana);
+    save(); render();
+    toast(`${terisi.length} bahan disimpan${state.rencana.length ? `, ${state.rencana.length} belum dibeli` : ''}`);
+  },
+  'hapus-rencana'(el) {
+    state.rencana = state.rencana.filter((x) => x.id !== el.dataset.id);
+    save(); render();
+  },
+  async 'kosongkan-rencana'() {
+    if (!(await tanya({ pesan: 'Kosongkan daftar belanja?', ok: 'Kosongkan', bahaya: true }))) return;
+    state.rencana = []; save(); render();
+  },
+  'rencana-semua-bahan'() {
+    const ada = new Set(state.rencana.map((r) => r.bahanId));
+    const tambah = state.bahan.filter((b) => !ada.has(b.id));
+    for (const b of tambah) state.rencana.push({ id: uid(), bahanId: b.id, nama: b.nama, satuan: b.satuan, jumlah: '', total: '' });
+    save(); render();
+    toast(tambah.length ? `${tambah.length} bahan ditambahkan` : 'Semua bahan sudah ada di daftar');
+  },
   async 'hapus-belanja'(el) {
     if (!(await tanya({ pesan: 'Hapus catatan belanja ini?', ok: 'Hapus', bahaya: true }))) return;
     state.belanja = state.belanja.filter((b) => b.id !== el.dataset.id);
@@ -720,6 +866,20 @@ const forms = {
     for (const [m, dibuat, terjual] of baru) catatJualan(t, m, dibuat, terjual);
     save(); render(); toast('Jualan disimpan');
   },
+  rencana(f) {
+    const bahanId = f.get('bahanId');
+    let item;
+    if (bahanId === '__baru') {
+      const nama = (f.get('nama') || '').trim();
+      if (!nama) return toast('Isi nama bahan');
+      item = { bahanId: null, nama, satuan: f.get('satuan') };
+    } else {
+      const b = cariBahan(bahanId);
+      item = { bahanId: b.id, nama: b.nama, satuan: b.satuan };
+    }
+    state.rencana.push({ id: uid(), ...item, jumlah: (f.get('jumlah') || '').trim(), total: '' });
+    save(); render(); toast(`${item.nama} ditambahkan ke daftar`);
+  },
   profil(f) {
     state.namaUsaha = f.get('namaUsaha').trim();
     save(); render(); toast('Tersimpan');
@@ -731,6 +891,9 @@ const changes = {
     ui.bahanBaru = el.value === '__baru';
     document.getElementById('bahan-baru').classList.toggle('hidden', !ui.bahanBaru);
     hargaSatuanPreview();
+  },
+  'pilih-bahan-rencana'(el) {
+    document.getElementById('r-bahan-baru').classList.toggle('hidden', el.value !== '__baru');
   },
   'sync-menu'() { syncDraftMenu(); render(); },
   'tanggal-jualan'(el) { ui.jualanTanggal = el.value || today(); render(); },
@@ -783,6 +946,15 @@ document.addEventListener('change', (e) => {
 
 document.addEventListener('input', (e) => {
   if (e.target.closest('[data-form="belanja"]')) hargaSatuanPreview();
+  const ri = e.target.closest('[data-rencana]');
+  if (ri) {
+    const r = state.rencana.find((x) => x.id === ri.dataset.rencana);
+    r[ri.dataset.field] = ri.value.trim();
+    save();
+    document.getElementById('rp-' + r.id).textContent = teksPerkiraan(r);
+    document.getElementById('rencana-total').innerHTML = teksTotalRencana();
+    document.getElementById('rencana-wa').href = linkDaftarWhatsApp();
+  }
   const el = e.target.closest('[data-input="sisa"]');
   if (el) {
     const id = el.dataset.menu;

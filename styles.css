@@ -250,3 +250,7 @@ a.btn { text-decoration: none; box-sizing: border-box; }
   border-radius: var(--radius);
   padding: 18px;
 }
+
+.rencana-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.rencana-item:last-of-type { border-bottom: 0; }
+.rencana-item .row > div:first-child { min-width: 0; }
