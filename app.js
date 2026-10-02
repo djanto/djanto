@@ -304,10 +304,43 @@ function viewBeranda() {
   return html;
 }
 
+// Pilih bahan yang sudah ada, atau tekan tombol "+ Bahan baru" untuk mengetik bahan baru.
+// Kolom yang disembunyikan ikut dinonaktifkan supaya tidak terkirim bersama form.
+function fieldBahan(prefix, opsiBahan, opsiSatuan) {
+  const adaBahan = state.bahan.length > 0;
+  const baru = ui.bahanBaru || !adaBahan;
+  return `<div data-pilih-bahan>
+    <div data-mode="lama" class="${baru ? 'hidden' : ''}">
+      <label for="${prefix}-bahan">Bahan</label>
+      <select id="${prefix}-bahan" name="bahanId" ${baru ? 'disabled' : ''}>${opsiBahan}</select>
+      <button type="button" class="btn small" data-action="bahan-baru" style="margin-top:8px">+ Bahan baru</button>
+    </div>
+    <div data-mode="baru" class="${baru ? '' : 'hidden'}">
+      <input type="hidden" name="bahanId" value="__baru" ${baru ? '' : 'disabled'}>
+      <div class="row">
+        <div><label for="${prefix}-nama">Nama bahan baru</label><input id="${prefix}-nama" name="nama" placeholder="mis. Daging sapi" ${baru ? '' : 'disabled'}></div>
+        <div class="shrink" style="width:130px"><label for="${prefix}-satuan">Satuan</label><select id="${prefix}-satuan" name="satuan" ${baru ? '' : 'disabled'}>${opsiSatuan}</select></div>
+      </div>
+      ${adaBahan ? `<button type="button" class="btn small" data-action="bahan-lama" style="margin-top:8px">← Pilih bahan yang sudah ada</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function setModeBahan(el, baru) {
+  ui.bahanBaru = baru;
+  const box = el.closest('[data-pilih-bahan]');
+  for (const mode of box.querySelectorAll('[data-mode]')) {
+    const tampil = (mode.dataset.mode === 'baru') === baru;
+    mode.classList.toggle('hidden', !tampil);
+    mode.querySelectorAll('input, select').forEach((f) => { f.disabled = !tampil; });
+  }
+  if (baru) box.querySelector('[name="nama"]').focus();
+  hargaSatuanPreview();
+}
+
 function viewBelanja() {
   const opsiBahan = state.bahan.map((b) => `<option value="${b.id}">${esc(b.nama)} (${b.satuan})</option>`).join('');
   const opsiSatuan = Object.keys(SATUAN).map((s) => `<option value="${s}">${s}</option>`).join('');
-  const bahanBaru = ui.bahanBaru || state.bahan.length === 0;
 
   const tab = (v, l) => `<button class="chip ${ui.tabBelanja === v ? 'active' : ''}" data-action="tab-belanja" data-v="${v}">${l}</button>`;
   let html = `<h1>Belanja bahan</h1>
@@ -318,17 +351,7 @@ function viewBelanja() {
   <form class="card" data-form="belanja">
     <label for="b-tgl">Tanggal</label>
     <input id="b-tgl" name="tanggal" type="date" value="${today()}" required>
-    <label for="b-bahan">Bahan</label>
-    <select id="b-bahan" name="bahanId" data-change="pilih-bahan">
-      ${opsiBahan}
-      <option value="__baru" ${bahanBaru ? 'selected' : ''}>+ Bahan baru…</option>
-    </select>
-    <div id="bahan-baru" class="${bahanBaru ? '' : 'hidden'}">
-      <div class="row">
-        <div><label for="b-nama">Nama bahan</label><input id="b-nama" name="nama" placeholder="mis. Daging sapi"></div>
-        <div class="shrink" style="width:120px"><label for="b-satuan">Satuan</label><select id="b-satuan" name="satuan">${opsiSatuan}</select></div>
-      </div>
-    </div>
+    ${fieldBahan('b', opsiBahan, opsiSatuan)}
     <div class="row">
       <div><label for="b-jml">Jumlah</label><input id="b-jml" name="jumlah" inputmode="decimal" placeholder="mis. 2" required></div>
       <div><label for="b-harga">Total bayar (Rp)</label><input id="b-harga" name="totalHarga" inputmode="numeric" placeholder="mis. 260000" required></div>
@@ -404,7 +427,6 @@ function teksPerkiraan(item) {
 }
 
 function viewDaftarBelanja(opsiBahan, opsiSatuan) {
-  const baruSaja = state.bahan.length === 0;
   const items = state.rencana.map((r) => {
     const b = r.bahanId && cariBahan(r.bahanId);
     return `<div class="rencana-item">
@@ -440,17 +462,7 @@ function viewDaftarBelanja(opsiBahan, opsiSatuan) {
 
   <form class="card" data-form="rencana">
     <h2 style="margin-top:0">Tambah ke daftar</h2>
-    <label for="r-bahan">Bahan</label>
-    <select id="r-bahan" name="bahanId" data-change="pilih-bahan-rencana">
-      ${opsiBahan}
-      <option value="__baru" ${baruSaja ? 'selected' : ''}>+ Bahan baru…</option>
-    </select>
-    <div id="r-bahan-baru" class="${baruSaja ? '' : 'hidden'}">
-      <div class="row">
-        <div><label for="r-nama">Nama bahan</label><input id="r-nama" name="nama" placeholder="mis. Daging sapi"></div>
-        <div class="shrink" style="width:120px"><label for="r-satuan">Satuan</label><select id="r-satuan" name="satuan">${opsiSatuan}</select></div>
-      </div>
-    </div>
+    ${fieldBahan('r', opsiBahan, opsiSatuan)}
     <label for="r-jml">Jumlah (boleh dikosongkan)</label>
     <input id="r-jml" name="jumlah" inputmode="decimal" placeholder="mis. 2">
     <button class="btn primary block" type="submit">Tambah ke daftar</button>
@@ -740,6 +752,8 @@ function catatJualan(tanggal, menu, dibuat, terjual) {
 const actions = {
   contoh() { isiContoh(); toast('Contoh data dimuat'); render(); },
   periode(el) { ui.periode = el.dataset.v; render(); },
+  'bahan-baru'(el) { setModeBahan(el, true); },
+  'bahan-lama'(el) { setModeBahan(el, false); },
   'tab-belanja'(el) { ui.tabBelanja = el.dataset.v; render(); },
   'beli-rencana'(el) {
     const r = state.rencana.find((x) => x.id === el.dataset.id);
@@ -887,14 +901,6 @@ const forms = {
 };
 
 const changes = {
-  'pilih-bahan'(el) {
-    ui.bahanBaru = el.value === '__baru';
-    document.getElementById('bahan-baru').classList.toggle('hidden', !ui.bahanBaru);
-    hargaSatuanPreview();
-  },
-  'pilih-bahan-rencana'(el) {
-    document.getElementById('r-bahan-baru').classList.toggle('hidden', el.value !== '__baru');
-  },
   'sync-menu'() { syncDraftMenu(); render(); },
   'tanggal-jualan'(el) { ui.jualanTanggal = el.value || today(); render(); },
   impor(el) {
