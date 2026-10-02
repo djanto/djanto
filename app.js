@@ -86,6 +86,38 @@ function esc(s) {
 const bulatAtas500 = (n) => Math.ceil(n / 500) * 500;
 const bulatBawah500 = (n) => Math.floor(n / 500) * 500;
 
+// Kotak dialog sendiri, pengganti confirm()/prompt() bawaan browser.
+// Hasil: false/null kalau batal, true (atau isi teks) kalau setuju.
+function tanya({ pesan, ok = 'Ya', bahaya = false, input = null }) {
+  return new Promise((selesai) => {
+    const el = document.createElement('div');
+    el.className = 'dialog-bg';
+    el.innerHTML = `<div class="dialog" role="dialog" aria-modal="true">
+      <p>${esc(pesan).replace(/\n/g, '<br>')}</p>
+      ${input !== null ? `<input id="dialog-input" inputmode="decimal" value="${esc(input)}">` : ''}
+      <div class="row" style="margin-top:14px">
+        <button class="btn" data-jawab="batal">Batal</button>
+        <button class="btn ${bahaya ? 'danger' : 'primary'}" data-jawab="ok">${esc(ok)}</button>
+      </div></div>`;
+    document.body.appendChild(el);
+    const field = el.querySelector('#dialog-input');
+    (field || el.querySelector('[data-jawab="ok"]')).focus();
+    const tutup = (setuju) => {
+      el.remove();
+      selesai(setuju ? (field ? field.value : true) : (field ? null : false));
+    };
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-jawab]');
+      if (b) tutup(b.dataset.jawab === 'ok');
+      else if (e.target === el) tutup(false);
+    });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') tutup(true);
+      if (e.key === 'Escape') tutup(false);
+    });
+  });
+}
+
 let toastTimer;
 function toast(msg) {
   const el = document.getElementById('toast');
@@ -483,8 +515,21 @@ function viewLaporan() {
   }
 
   if (!menus.length && !r.belanja) html += `<p class="muted">Belum ada catatan pada periode ini.</p>`;
-  else html += `<button class="btn block" data-action="bagikan">Kirim ringkasan lewat WhatsApp</button>`;
+  else html += `<a class="btn block" href="${linkWhatsApp(r, dari, sampai, label)}" target="_blank" rel="noopener">Kirim ringkasan lewat WhatsApp</a>`;
   return html;
+}
+
+function linkWhatsApp(r, dari, sampai, label) {
+  const teks = [
+    `*Laporan ${state.namaUsaha || 'Dagangku'}*`,
+    `${label} (${fmtTanggal(dari)} – ${fmtTanggal(sampai)})`,
+    `Penjualan: ${rp(r.penjualan)}`,
+    `Untung kotor: ${rp(r.untungKotor)}`,
+    `Porsi terjual: ${angka(r.terjual)}, sisa: ${angka(r.sisa)}`,
+    `Belanja bahan: ${rp(r.belanja)}`,
+    ...Object.values(r.perMenu).map((m) => `• ${m.nama}: ${angka(m.terjual)} porsi, untung ${rp(m.untung)}`),
+  ].join('\n');
+  return 'https://wa.me/?text=' + encodeURIComponent(teks);
 }
 
 function viewPengaturan() {
@@ -577,15 +622,19 @@ function catatJualan(tanggal, menu, dibuat, terjual) {
 const actions = {
   contoh() { isiContoh(); toast('Contoh data dimuat'); render(); },
   periode(el) { ui.periode = el.dataset.v; render(); },
-  'hapus-belanja'(el) {
-    if (!confirm('Hapus catatan belanja ini?')) return;
+  async 'hapus-belanja'(el) {
+    if (!(await tanya({ pesan: 'Hapus catatan belanja ini?', ok: 'Hapus', bahaya: true }))) return;
     state.belanja = state.belanja.filter((b) => b.id !== el.dataset.id);
     save(); render();
   },
-  koreksi(el) {
+  async koreksi(el) {
     const b = cariBahan(el.dataset.id);
     const perkiraan = stokBahan(b.id);
-    const jawab = prompt(`Sisa ${b.nama} sebenarnya sekarang berapa ${b.satuan}?\n(Perkiraan aplikasi: ${angka(perkiraan)} ${b.satuan})`, String(Math.round(Math.max(perkiraan, 0) * 100) / 100));
+    const jawab = await tanya({
+      pesan: `Sisa ${b.nama} sebenarnya sekarang berapa ${b.satuan}?\n(Perkiraan aplikasi: ${angka(perkiraan)} ${b.satuan})`,
+      ok: 'Simpan',
+      input: String(Math.round(Math.max(perkiraan, 0) * 100) / 100),
+    });
     if (jawab === null || jawab.trim() === '') return;
     const sebenarnya = numJumlah(jawab);
     const selisih = sebenarnya - perkiraan;
@@ -603,8 +652,8 @@ const actions = {
   'hapus-komposisi'(el) { syncDraftMenu(); ui.draftMenu.komposisi.splice(Number(el.dataset.i), 1); render(); },
   'hitung-menu'() { syncDraftMenu(); render(); },
   'batal-menu'() { ui.draftMenu = null; render(); },
-  'hapus-menu'(el) {
-    if (!confirm('Hapus menu ini? Catatan jualan lama tetap tersimpan.')) return;
+  async 'hapus-menu'(el) {
+    if (!(await tanya({ pesan: 'Hapus menu ini? Catatan jualan lama tetap tersimpan.', ok: 'Hapus', bahaya: true }))) return;
     state.menu = state.menu.filter((m) => m.id !== el.dataset.id);
     ui.draftMenu = null; save(); render();
   },
@@ -612,20 +661,6 @@ const actions = {
     const m = cariMenu(el.dataset.id);
     m.hargaJual = saranHarga(m).saran;
     save(); render(); toast(`Harga ${m.nama} jadi ${rp(m.hargaJual)}`);
-  },
-  bagikan() {
-    const [dari, sampai, label] = periodeRange();
-    const r = ringkasan(dari, sampai);
-    const teks = [
-      `*Laporan ${state.namaUsaha || 'Dagangku'}*`,
-      `${label} (${fmtTanggal(dari)} – ${fmtTanggal(sampai)})`,
-      `Penjualan: ${rp(r.penjualan)}`,
-      `Untung kotor: ${rp(r.untungKotor)}`,
-      `Porsi terjual: ${angka(r.terjual)}, sisa: ${angka(r.sisa)}`,
-      `Belanja bahan: ${rp(r.belanja)}`,
-      ...Object.values(r.perMenu).map((m) => `• ${m.nama}: ${angka(m.terjual)} porsi, untung ${rp(m.untung)}`),
-    ].join('\n');
-    window.open('https://wa.me/?text=' + encodeURIComponent(teks), '_blank');
   },
   ekspor() {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
@@ -635,8 +670,8 @@ const actions = {
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   },
-  'hapus-semua'() {
-    if (!confirm('Yakin hapus SEMUA data? Tidak bisa dibatalkan.')) return;
+  async 'hapus-semua'() {
+    if (!(await tanya({ pesan: 'Yakin hapus SEMUA data? Tidak bisa dibatalkan.', ok: 'Hapus semua', bahaya: true }))) return;
     state = defaultState(); save(); go('beranda'); toast('Semua data dihapus');
   },
 };
@@ -702,10 +737,11 @@ const changes = {
   impor(el) {
     const file = el.files[0];
     if (!file) return;
-    file.text().then((txt) => {
+    file.text().then(async (txt) => {
       const data = JSON.parse(txt);
       if (!Array.isArray(data.bahan) || !Array.isArray(data.menu) || !Array.isArray(data.jualan)) throw new Error('format');
-      if (!confirm('Data di HP ini akan diganti dengan isi file cadangan. Lanjut?')) return;
+      el.value = '';
+      if (!(await tanya({ pesan: 'Data di HP ini akan diganti dengan isi file cadangan. Lanjut?', ok: 'Pulihkan' }))) return;
       state = Object.assign(defaultState(), data);
       save(); go('beranda'); toast('Data dipulihkan');
     }).catch(() => toast('File cadangan tidak valid'));
