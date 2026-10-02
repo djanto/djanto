@@ -1,6 +1,6 @@
 // Simpan file aplikasi di HP supaya tetap bisa dibuka tanpa internet.
 // Naikkan VERSI setiap kali ada perubahan file agar HP pengguna ikut diperbarui.
-const VERSI = 'dagangku-v0.2.2';
+const VERSI = 'dagangku-v0.3.0';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {

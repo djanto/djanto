@@ -14,10 +14,15 @@ const SATUAN = {
   pcs: { kecil: 'pcs', faktor: 1 },
   ikat: { kecil: 'ikat', faktor: 1 },
   bungkus: { kecil: 'bungkus', faktor: 1 },
+  butir: { kecil: 'butir', faktor: 1 },
+  potong: { kecil: 'potong', faktor: 1 },
+  porsi: { kecil: 'porsi', faktor: 1 },
 };
+const SATUAN_MENTAH = ['kg', 'liter', 'pcs', 'ikat', 'bungkus', 'butir'];
+const SATUAN_OLAHAN = ['potong', 'butir', 'porsi', 'pcs', 'bungkus', 'kg', 'liter'];
 
 function defaultState() {
-  return { versi: 1, namaUsaha: '', bahan: [], belanja: [], menu: [], jualan: [], koreksi: [], rencana: [] };
+  return { versi: 1, namaUsaha: '', bahan: [], belanja: [], menu: [], jualan: [], koreksi: [], rencana: [], olahan: [] };
 }
 
 function load() {
@@ -131,6 +136,10 @@ function toast(msg) {
 
 const cariBahan = (id) => state.bahan.find((b) => b.id === id);
 const cariMenu = (id) => state.menu.find((m) => m.id === id);
+// Bahan olahan (siap jual) disimpan di daftar bahan dengan jenis 'olahan'.
+const isOlahan = (b) => b && b.jenis === 'olahan';
+const bahanMentah = () => state.bahan.filter((b) => !isOlahan(b));
+const bahanOlahan = () => state.bahan.filter(isOlahan);
 
 // Pemakaian bahan per porsi, dalam satuan beli (mis. kg).
 function pemakaianPerPorsi(menu) {
@@ -190,6 +199,10 @@ function stokBahan(bahanId) {
   for (const j of state.jualan) {
     for (const p of j.pemakaian || []) if (p.bahanId === bahanId) stok -= p.jumlah * j.dibuat;
   }
+  for (const o of state.olahan) {
+    if (o.olahanId === bahanId) stok += o.hasil;
+    for (const p of o.pemakaian) if (p.bahanId === bahanId) stok -= p.jumlah;
+  }
   for (const k of state.koreksi) if (k.bahanId === bahanId) stok += k.selisih;
   return stok;
 }
@@ -235,17 +248,18 @@ function ringkasan(dari, sampai) {
 
 const $app = document.getElementById('app');
 let view = 'beranda';
-const ui = { jualanTanggal: today(), periode: '7', draftMenu: null, bahanBaru: false, tabBelanja: 'daftar' };
+const ui = { jualanTanggal: today(), periode: '7', draftMenu: null, draftOlah: null, bahanBaru: false, tabBelanja: 'daftar' };
 
 function go(v) {
   view = v;
   if (v !== 'menu') ui.draftMenu = null;
+  if (v !== 'olah') ui.draftOlah = null;
   render();
   window.scrollTo(0, 0);
 }
 
 function render() {
-  const views = { beranda: viewBeranda, belanja: viewBelanja, menu: viewMenu, jualan: viewJualan, laporan: viewLaporan, pengaturan: viewPengaturan };
+  const views = { beranda: viewBeranda, belanja: viewBelanja, olah: viewOlah, menu: viewMenu, jualan: viewJualan, laporan: viewLaporan, pengaturan: viewPengaturan };
   $app.innerHTML = views[view]();
   document.getElementById('nama-usaha').textContent = state.namaUsaha;
   document.querySelectorAll('.bottomnav [data-nav]').forEach((b) => b.classList.toggle('active', b.dataset.nav === view));
@@ -268,6 +282,7 @@ function viewBeranda() {
       <h2 style="margin-top:0">Mulai dalam 3 langkah</h2>
       <ol class="steps">
         <li><b>Belanja</b>: catat bahan yang dibeli dan harganya.</li>
+        <li><b>Olahan</b> (kalau ada): catat bahan yang diolah jadi siap jual, mis. 3 kg ayam jadi 30 potong.</li>
         <li><b>Menu</b>: tulis resep per porsi. Modal per porsi dihitung otomatis.</li>
         <li><b>Jualan</b>: tiap tutup lapak, catat porsi dibuat dan terjual.</li>
       </ol>
@@ -289,15 +304,28 @@ function viewBeranda() {
     html += `<button class="btn primary block" data-nav="jualan">Catat jualan hari ini</button>`;
   }
 
+  if (bahanOlahan().length) {
+    html += `<h2>Bahan siap jual</h2><div class="card"><ul class="list">` +
+      bahanOlahan().map((b) => {
+        const stok = stokBahan(b.id);
+        return `<li><div><b>${esc(b.nama)}</b><br><span class="muted">modal ${rp(b.harga)}/${b.satuan}</span></div>
+          <div class="right"><strong class="${stok <= 0 ? 'neg' : ''}">${angka(Math.max(stok, 0))} ${b.satuan}</strong></div></li>`;
+      }).join('') + `</ul></div>`;
+  }
+
   const peringatan = [];
   for (const m of state.menu) {
     const s = saranHarga(m);
     if (s.level === 'bad') peringatan.push(`<div class="alert bad"><b>${esc(m.nama)}</b>: ${s.pesan}</div>`);
     else if (s.saran && num(m.hargaJual) < s.saran) peringatan.push(`<div class="alert good"><b>${esc(m.nama)}</b>: ${s.pesan}</div>`);
   }
-  const habis = state.bahan.filter((b) => stokBahan(b.id) <= 0).map((b) => esc(b.nama));
+  const habis = bahanMentah().filter((b) => stokBahan(b.id) <= 0).map((b) => esc(b.nama));
   if (habis.length) {
     peringatan.push(`<div class="alert warn">Stok diperkirakan habis: <b>${habis.join(', ')}</b>. Catat belanja baru, atau sesuaikan stok di halaman Belanja.</div>`);
+  }
+  const olahanHabis = bahanOlahan().filter((b) => stokBahan(b.id) <= 0).map((b) => esc(b.nama));
+  if (olahanHabis.length) {
+    peringatan.push(`<div class="alert warn">Bahan siap jual habis: <b>${olahanHabis.join(', ')}</b>. Catat olahan baru di halaman Olahan.</div>`);
   }
   if (peringatan.length) html += `<h2>Perlu perhatian</h2>${peringatan.join('')}`;
 
@@ -307,7 +335,7 @@ function viewBeranda() {
 // Pilih bahan yang sudah ada, atau tekan tombol "+ Bahan baru" untuk mengetik bahan baru.
 // Kolom yang disembunyikan ikut dinonaktifkan supaya tidak terkirim bersama form.
 function fieldBahan(prefix, opsiBahan, opsiSatuan) {
-  const adaBahan = state.bahan.length > 0;
+  const adaBahan = bahanMentah().length > 0;
   const baru = ui.bahanBaru || !adaBahan;
   return `<div data-pilih-bahan>
     <div data-mode="lama" class="${baru ? 'hidden' : ''}">
@@ -339,8 +367,8 @@ function setModeBahan(el, baru) {
 }
 
 function viewBelanja() {
-  const opsiBahan = state.bahan.map((b) => `<option value="${b.id}">${esc(b.nama)} (${b.satuan})</option>`).join('');
-  const opsiSatuan = Object.keys(SATUAN).map((s) => `<option value="${s}">${s}</option>`).join('');
+  const opsiBahan = bahanMentah().map((b) => `<option value="${b.id}">${esc(b.nama)} (${b.satuan})</option>`).join('');
+  const opsiSatuan = SATUAN_MENTAH.map((s) => `<option value="${s}">${s}</option>`).join('');
 
   const tab = (v, l) => `<button class="chip ${ui.tabBelanja === v ? 'active' : ''}" data-action="tab-belanja" data-v="${v}">${l}</button>`;
   let html = `<h1>Belanja bahan</h1>
@@ -360,9 +388,9 @@ function viewBelanja() {
     <button class="btn primary block" type="submit">Simpan belanja</button>
   </form>`;
 
-  if (state.bahan.length) {
+  if (bahanMentah().length) {
     html += `<h2>Harga &amp; stok bahan</h2><div class="card"><ul class="list">` +
-      state.bahan.map((b) => {
+      bahanMentah().map((b) => {
         const stok = stokBahan(b.id);
         return `<li>
           <div><b>${esc(b.nama)}</b><br><span class="muted">${rp(b.harga)}/${b.satuan}</span></div>
@@ -449,7 +477,7 @@ function viewDaftarBelanja(opsiBahan, opsiSatuan) {
     <label for="r-jml">Jumlah (boleh dikosongkan)</label>
     <input id="r-jml" name="jumlah" inputmode="decimal" placeholder="mis. 2">
     <button class="btn primary block" type="submit">Tambah ke daftar</button>
-    ${state.bahan.length ? `<button type="button" class="btn block" data-action="rencana-semua-bahan">Tambah semua bahan yang biasa dibeli</button>` : ''}
+    ${bahanMentah().length ? `<button type="button" class="btn block" data-action="rencana-semua-bahan">Tambah semua bahan yang biasa dibeli</button>` : ''}
   </form>
 
   <div class="card">
@@ -477,7 +505,7 @@ function beliRencana(r) {
   if (jumlah <= 0 || total <= 0) return false;
   let b = r.bahanId && cariBahan(r.bahanId);
   if (!b) {
-    b = state.bahan.find((x) => x.nama.toLowerCase() === r.nama.toLowerCase() && x.satuan === r.satuan);
+    b = bahanMentah().find((x) => x.nama.toLowerCase() === r.nama.toLowerCase() && x.satuan === r.satuan);
     if (!b) {
       b = { id: uid(), nama: r.nama, satuan: r.satuan, harga: 0 };
       state.bahan.push(b);
@@ -487,6 +515,151 @@ function beliRencana(r) {
   state.belanja.push({ id: uid(), tanggal: today(), bahanId: b.id, jumlah, totalHarga: total });
   state.rencana = state.rencana.filter((x) => x.id !== r.id);
   return true;
+}
+
+/* ---------- Olahan: bahan mentah diolah jadi bahan siap jual ---------- */
+
+function biayaOlah(d) {
+  const bahan = d.pemakaian.reduce((t, p) => {
+    const b = cariBahan(p.bahanId);
+    return b ? t + (p.jumlah / SATUAN[b.satuan].faktor) * (b.harga || 0) : t;
+  }, 0);
+  return bahan + num(d.biayaLain);
+}
+
+function draftOlahBaru(olahan) {
+  const mentah = bahanMentah();
+  if (olahan) {
+    return {
+      olahanId: olahan.id, nama: olahan.nama, satuan: olahan.satuan, tanggal: today(),
+      pemakaian: (olahan.resep || []).map((r) => ({ ...r })), biayaLain: olahan.biayaLain || 0, hasil: olahan.hasilStandar || 0,
+    };
+  }
+  return { olahanId: null, nama: '', satuan: 'potong', tanggal: today(), pemakaian: [{ bahanId: mentah[0].id, jumlah: 0 }], biayaLain: 0, hasil: 0 };
+}
+
+function viewOlah() {
+  let html = `<h1>Bahan siap jual</h1>`;
+  if (!bahanMentah().length) {
+    return html + `<div class="alert warn">Catat belanja bahan mentah dulu, baru bisa dicatat olahannya.</div>
+      <button class="btn primary block" data-nav="belanja">Ke halaman Belanja</button>`;
+  }
+  if (ui.draftOlah) return viewFormOlah();
+
+  html += `<p class="muted">Contoh: 3 kg ayam diolah jadi 30 potong siap goreng. Catat di sini supaya tahu modal per potong dan sisa yang siap dijual.</p>
+    <button class="btn primary block" data-action="olah-baru">+ Catat olahan</button>`;
+
+  const daftar = bahanOlahan();
+  if (daftar.length) {
+    html += `<h2>Stok siap jual</h2>`;
+    for (const b of daftar) {
+      const stok = stokBahan(b.id);
+      html += `<div class="card">
+        <div class="row" style="align-items:center">
+          <div><b>${esc(b.nama)}</b><br><span class="muted">modal ${rp(b.harga)}/${b.satuan}</span></div>
+          <div class="right shrink"><strong class="${stok <= 0 ? 'neg' : ''}" style="font-size:20px">${angka(Math.max(stok, 0))} ${b.satuan}</strong><br>
+            <span class="muted">nilai ${rp(Math.max(stok, 0) * b.harga)}</span></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn small" data-action="olah-lagi" data-id="${b.id}">Olah lagi</button>
+          <button class="btn small" data-action="koreksi" data-id="${b.id}">Sesuaikan stok</button>
+        </div>
+      </div>`;
+    }
+  }
+
+  const riwayat = [...state.olahan].sort((a, b) => b.tanggal.localeCompare(a.tanggal)).slice(0, 15);
+  if (riwayat.length) {
+    html += `<h2>Riwayat olahan</h2><div class="card"><ul class="list">` +
+      riwayat.map((o) => {
+        const b = cariBahan(o.olahanId);
+        return `<li>
+          <div>${esc(b ? b.nama : '?')} · <b>${angka(o.hasil)} ${b ? b.satuan : ''}</b><br><span class="muted">${fmtTanggal(o.tanggal)} · modal ${rp(o.biaya)}</span></div>
+          <div class="right"><button class="btn small danger" data-action="hapus-olahan" data-id="${o.id}">Hapus</button></div>
+        </li>`;
+      }).join('') + `</ul></div>`;
+  }
+  return html;
+}
+
+function viewFormOlah() {
+  const d = ui.draftOlah;
+  const mentah = bahanMentah();
+  const opsi = (sel) => mentah.map((b) => `<option value="${b.id}" ${b.id === sel ? 'selected' : ''}>${esc(b.nama)}</option>`).join('');
+  const baris = d.pemakaian.map((p, i) => {
+    const b = cariBahan(p.bahanId) || mentah[0];
+    const stok = stokBahan(b.id);
+    return `<div class="row">
+      <div><label for="o-b-${i}">Bahan</label><select id="o-b-${i}" name="o_bahan_${i}" data-change="sync-olah">${opsi(b.id)}</select></div>
+      <div class="shrink" style="width:110px"><label for="o-j-${i}">Pakai (${SATUAN[b.satuan].kecil})</label><input id="o-j-${i}" name="o_jumlah_${i}" inputmode="decimal" value="${p.jumlah || ''}"></div>
+      <button type="button" class="btn small shrink danger" data-action="hapus-pemakaian" data-i="${i}" aria-label="Hapus bahan">✕</button>
+    </div>
+    <p class="muted" style="font-size:13px;margin:2px 0 0">Stok ±${angka(stok)} ${b.satuan} · ${rp(b.harga)}/${b.satuan}</p>`;
+  }).join('');
+  const biaya = biayaOlah(d);
+  const hasil = num(d.hasil);
+  const opsiSatuan = SATUAN_OLAHAN.map((s) => `<option value="${s}" ${s === d.satuan ? 'selected' : ''}>${s}</option>`).join('');
+
+  return `<h1>Catat olahan</h1>
+  <form class="card" data-form="olah">
+    <label for="o-tgl">Tanggal</label>
+    <input id="o-tgl" name="tanggal" type="date" value="${d.tanggal}">
+    ${d.olahanId
+      ? `<h2>${esc(d.nama)}</h2>`
+      : `<div class="row">
+          <div><label for="o-nama">Nama bahan siap jual</label><input id="o-nama" name="nama" value="${esc(d.nama)}" placeholder="mis. Ayam goreng tepung"></div>
+          <div class="shrink" style="width:130px"><label for="o-satuan">Satuan</label><select id="o-satuan" name="satuan">${opsiSatuan}</select></div>
+        </div>`}
+    <h2>Bahan mentah yang dipakai</h2>
+    ${baris || '<p class="muted">Belum ada bahan.</p>'}
+    <button type="button" class="btn small" data-action="tambah-pemakaian" style="margin-top:10px">+ Tambah bahan</button>
+    <label for="o-lain">Biaya lain (gas, bumbu) Rp</label>
+    <input id="o-lain" name="biayaLain" inputmode="numeric" value="${d.biayaLain || ''}" placeholder="mis. 3000">
+    <label for="o-hasil">Hasil jadi (${esc(d.satuan)})</label>
+    <input id="o-hasil" name="hasil" inputmode="numeric" value="${d.hasil || ''}" placeholder="mis. 30" required>
+    <div class="card" style="margin-top:14px;background:var(--surface-2)">
+      Modal olahan: <b>${rp(biaya)}</b><br>
+      ${hasil > 0 ? `Modal per ${esc(d.satuan)}: <b>${rp(biaya / hasil)}</b>` : 'Isi hasil jadi untuk melihat modal per satuan.'}
+      <div><button type="button" class="btn small" data-action="hitung-olah" style="margin-top:8px">Hitung ulang</button></div>
+    </div>
+    <button class="btn primary block" type="submit">Simpan olahan</button>
+    <button type="button" class="btn block" data-action="batal-olah">Batal</button>
+  </form>`;
+}
+
+function syncDraftOlah() {
+  const form = document.querySelector('[data-form="olah"]');
+  if (!form || !ui.draftOlah) return;
+  const f = new FormData(form);
+  const d = ui.draftOlah;
+  d.tanggal = f.get('tanggal') || today();
+  if (!d.olahanId) {
+    d.nama = (f.get('nama') || '').trim();
+    d.satuan = f.get('satuan') || d.satuan;
+  }
+  d.biayaLain = num(f.get('biayaLain'));
+  d.hasil = num(f.get('hasil'));
+  d.pemakaian = d.pemakaian.map((p, i) => ({ bahanId: f.get(`o_bahan_${i}`), jumlah: numJumlah(f.get(`o_jumlah_${i}`)) }));
+}
+
+// Simpan satu kali olahan: stok mentah berkurang, stok siap jual bertambah, modal per satuan diperbarui.
+function simpanOlahan(d) {
+  const pemakaian = d.pemakaian.filter((p) => p.jumlah > 0);
+  const biaya = biayaOlah({ ...d, pemakaian });
+  let olahan = d.olahanId && cariBahan(d.olahanId);
+  if (!olahan) {
+    olahan = bahanOlahan().find((b) => b.nama.toLowerCase() === d.nama.toLowerCase());
+    if (!olahan) {
+      olahan = { id: uid(), nama: d.nama, satuan: d.satuan, jenis: 'olahan', harga: 0 };
+      state.bahan.push(olahan);
+    }
+  }
+  Object.assign(olahan, { harga: biaya / d.hasil, resep: pemakaian, biayaLain: num(d.biayaLain), hasilStandar: d.hasil });
+  state.olahan.push({
+    id: uid(), tanggal: d.tanggal, olahanId: olahan.id, hasil: d.hasil, biaya, biayaLain: num(d.biayaLain),
+    pemakaian: pemakaian.map((p) => ({ bahanId: p.bahanId, jumlah: p.jumlah / SATUAN[cariBahan(p.bahanId).satuan].faktor })),
+  });
+  return olahan;
 }
 
 function viewMenu() {
@@ -520,7 +693,7 @@ function viewMenu() {
 
 function viewFormMenu() {
   const d = ui.draftMenu;
-  const opsi = (sel) => state.bahan.map((b) => `<option value="${b.id}" ${b.id === sel ? 'selected' : ''}>${esc(b.nama)}</option>`).join('');
+  const opsi = (sel) => state.bahan.map((b) => `<option value="${b.id}" ${b.id === sel ? 'selected' : ''}>${isOlahan(b) ? '★ ' : ''}${esc(b.nama)}</option>`).join('');
   const baris = d.komposisi.map((k, i) => {
     const b = cariBahan(k.bahanId) || state.bahan[0];
     return `<div class="row">
@@ -559,6 +732,17 @@ function viewFormMenu() {
   </form>`;
 }
 
+// Untuk menu yang memakai bahan siap jual: tampilkan stoknya dan cukup untuk berapa porsi.
+function infoSiapJual(menu) {
+  const baris = (menu.komposisi || []).map((k) => {
+    const b = cariBahan(k.bahanId);
+    if (!isOlahan(b) || !(k.jumlah > 0)) return '';
+    const stok = Math.max(stokBahan(b.id), 0);
+    return `${esc(b.nama)}: ${angka(stok)} ${b.satuan} (cukup ±${Math.floor(stok / k.jumlah)} porsi)`;
+  }).filter(Boolean);
+  return baris.length ? `<p class="muted" style="font-size:14px">Stok siap jual saat ini · ${baris.join(' · ')}</p>` : '';
+}
+
 function viewJualan() {
   if (!state.menu.length) {
     return `<h1>Catat jualan</h1><div class="alert warn">Buat menu dulu supaya bisa mencatat jualan.</div>
@@ -576,6 +760,7 @@ function viewJualan() {
         <div><label for="t-${m.id}">Terjual</label><input id="t-${m.id}" name="terjual_${m.id}" inputmode="numeric" value="${c ? c.terjual : ''}" data-input="sisa" data-menu="${m.id}"></div>
       </div>
       <p class="muted" id="sisa-${m.id}">${c ? `Sisa ${c.dibuat - c.terjual} porsi` : '&nbsp;'}</p>
+      ${infoSiapJual(m)}
     </div>`;
   }).join('');
 
@@ -681,7 +866,7 @@ function viewPengaturan() {
     <p class="muted">Tidak bisa dibatalkan. Simpan cadangan dulu.</p>
     <button class="btn danger block" data-action="hapus-semua">Hapus semua data</button>
   </div>
-  <p class="muted">Dagangku versi 0.2 · data tidak dikirim ke mana pun.</p>`;
+  <p class="muted">Dagangku versi 0.3 · data tidak dikirim ke mana pun.</p>`;
 }
 
 /* ---------- Aksi ---------- */
@@ -717,25 +902,38 @@ function isiContoh() {
   const minyak = bahan('Minyak goreng', 'liter', 18000);
   const tepung = bahan('Tepung bumbu', 'kg', 25000);
 
+  const resepAyam = [{ bahanId: ayam, jumlah: 3000 }, { bahanId: tepung, jumlah: 600 }, { bahanId: minyak, jumlah: 1000 }];
+  const ayamGoreng = { id: uid(), nama: 'Ayam goreng tepung', satuan: 'potong', jenis: 'olahan', resep: resepAyam, biayaLain: 3000, hasilStandar: 30 };
+  ayamGoreng.harga = biayaOlah({ pemakaian: resepAyam, biayaLain: 3000 }) / 30;
+  state.bahan.push(ayamGoreng);
+
   state.menu.push(
     { id: uid(), nama: 'Bakso komplit', hargaJual: 15000, hargaPasar: 18000, targetPersen: 40, biayaLain: 1000,
       komposisi: [{ bahanId: daging, jumlah: 60 }, { bahanId: tapioka, jumlah: 20 }, { bahanId: mie, jumlah: 80 }, { bahanId: bumbu, jumlah: 10 }, { bahanId: sawi, jumlah: 0.2 }] },
     { id: uid(), nama: 'Ayam geprek + nasi', hargaJual: 13000, hargaPasar: 15000, targetPersen: 40, biayaLain: 1000,
-      komposisi: [{ bahanId: ayam, jumlah: 150 }, { bahanId: beras, jumlah: 100 }, { bahanId: cabai, jumlah: 20 }, { bahanId: minyak, jumlah: 50 }, { bahanId: tepung, jumlah: 30 }] },
+      komposisi: [{ bahanId: ayamGoreng.id, jumlah: 1 }, { bahanId: beras, jumlah: 100 }, { bahanId: cabai, jumlah: 20 }] },
   );
 
-  // Tiap pagi belanja secukupnya (dibulatkan ke atas), lalu catat porsi dibuat & terjual.
+  // Tiap pagi belanja secukupnya, olah ayam jadi potongan siap goreng, lalu catat porsi dibuat & terjual.
+  // Hari ini sengaja diolah 30 potong supaya terlihat ada sisa siap jual.
   const pola = [[30, 26, 25, 22], [32, 30, 25, 25], [30, 24, 28, 21], [35, 33, 30, 27], [30, 29, 25, 24], [40, 36, 30, 30], [30, 22, 25, 18]];
   pola.forEach(([db, tb, da, ta], i) => {
     const tanggal = addDays(t, i - 6);
     const butuh = {};
+    const hasilAyam = i === 6 ? 30 : da;
+    const olah = { olahanId: ayamGoreng.id, nama: ayamGoreng.nama, satuan: 'potong', tanggal, biayaLain: 3000 * hasilAyam / 30, hasil: hasilAyam,
+      pemakaian: resepAyam.map((r) => ({ bahanId: r.bahanId, jumlah: r.jumlah * hasilAyam / 30 })) };
+    for (const p of olah.pemakaian) butuh[p.bahanId] = (butuh[p.bahanId] || 0) + p.jumlah / 1000;
     for (const [menu, porsi] of [[state.menu[0], db], [state.menu[1], da]]) {
-      for (const p of pemakaianPerPorsi(menu)) butuh[p.bahanId] = (butuh[p.bahanId] || 0) + p.jumlah * porsi;
+      for (const p of pemakaianPerPorsi(menu)) {
+        if (!isOlahan(cariBahan(p.bahanId))) butuh[p.bahanId] = (butuh[p.bahanId] || 0) + p.jumlah * porsi;
+      }
     }
     for (const [bahanId, jml] of Object.entries(butuh)) {
       const jumlah = Math.ceil(jml * 2) / 2;
       state.belanja.push({ id: uid(), tanggal, bahanId, jumlah, totalHarga: Math.round(jumlah * cariBahan(bahanId).harga) });
     }
+    simpanOlahan(olah);
     catatJualan(tanggal, state.menu[0], db, tb);
     catatJualan(tanggal, state.menu[1], da, ta);
   });
@@ -754,6 +952,17 @@ const actions = {
   periode(el) { ui.periode = el.dataset.v; render(); },
   'bahan-baru'(el) { setModeBahan(el, true); },
   'bahan-lama'(el) { setModeBahan(el, false); },
+  'olah-baru'() { ui.draftOlah = draftOlahBaru(null); render(); },
+  'olah-lagi'(el) { ui.draftOlah = draftOlahBaru(cariBahan(el.dataset.id)); render(); },
+  'tambah-pemakaian'() { syncDraftOlah(); ui.draftOlah.pemakaian.push({ bahanId: bahanMentah()[0].id, jumlah: 0 }); render(); },
+  'hapus-pemakaian'(el) { syncDraftOlah(); ui.draftOlah.pemakaian.splice(Number(el.dataset.i), 1); render(); },
+  'hitung-olah'() { syncDraftOlah(); render(); },
+  'batal-olah'() { ui.draftOlah = null; render(); },
+  async 'hapus-olahan'(el) {
+    if (!(await tanya({ pesan: 'Hapus catatan olahan ini? Stok mentah dan stok siap jual ikut dikembalikan.', ok: 'Hapus', bahaya: true }))) return;
+    state.olahan = state.olahan.filter((o) => o.id !== el.dataset.id);
+    save(); render();
+  },
   'tab-belanja'(el) { ui.tabBelanja = el.dataset.v; render(); },
   'beli-rencana'(el) {
     const r = state.rencana.find((x) => x.id === el.dataset.id);
@@ -777,7 +986,7 @@ const actions = {
   },
   'rencana-semua-bahan'() {
     const ada = new Set(state.rencana.map((r) => r.bahanId));
-    const tambah = state.bahan.filter((b) => !ada.has(b.id));
+    const tambah = bahanMentah().filter((b) => !ada.has(b.id));
     for (const b of tambah) state.rencana.push({ id: uid(), bahanId: b.id, nama: b.nama, satuan: b.satuan, jumlah: '', total: '' });
     save(); render();
     toast(tambah.length ? `${tambah.length} bahan ditambahkan` : 'Semua bahan sudah ada di daftar');
@@ -880,6 +1089,17 @@ const forms = {
     for (const [m, dibuat, terjual] of baru) catatJualan(t, m, dibuat, terjual);
     save(); render(); toast('Jualan disimpan');
   },
+  olah() {
+    syncDraftOlah();
+    const d = ui.draftOlah;
+    if (!d.nama) return toast('Isi nama bahan siap jual');
+    if (!(d.hasil > 0)) return toast('Isi hasil jadi');
+    if (!d.pemakaian.some((p) => p.jumlah > 0)) return toast('Isi bahan mentah yang dipakai');
+    const o = simpanOlahan(d);
+    ui.draftOlah = null;
+    save(); render();
+    toast(`${angka(d.hasil)} ${o.satuan} ${o.nama} siap jual · modal ${rp(o.harga)}/${o.satuan}`);
+  },
   rencana(f) {
     const bahanId = f.get('bahanId');
     let item;
@@ -901,6 +1121,7 @@ const forms = {
 };
 
 const changes = {
+  'sync-olah'() { syncDraftOlah(); render(); },
   'sync-menu'() { syncDraftMenu(); render(); },
   'tanggal-jualan'(el) { ui.jualanTanggal = el.value || today(); render(); },
   impor(el) {

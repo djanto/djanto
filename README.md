@@ -2,11 +2,12 @@
 
 Aplikasi catatan modal dan untung untuk **pedagang makanan kaki lima** (bakso, ayam geprek, dan sejenisnya).
 
-## Fitur versi 0.2
+## Fitur versi 0.3
 
 - **Daftar belanja**: susun daftar dengan harga kosong, isi harga saat di pasar, lihat perkiraan uang yang perlu dibawa, kirim daftar lewat WhatsApp.
 - **Belanja bahan**: catat jumlah dan total bayar, harga per kg/liter/pcs dihitung otomatis.
-- **Menu & resep**: tulis bahan per porsi, **modal per porsi (HPP)** dihitung otomatis.
+- **Olahan (bahan siap jual)**: catat bahan mentah yang diolah, mis. 3 kg ayam + tepung jadi 30 potong siap goreng. Modal per potong dihitung otomatis, stok mentah berkurang, dan sisa potong siap jual terlihat di Beranda, Olahan, dan Jualan.
+- **Menu & resep**: tulis bahan per porsi (boleh memakai bahan siap jual, mis. 1 potong ayam goreng), **modal per porsi (HPP)** dihitung otomatis.
 - **Saran harga**: bandingkan dengan harga pasaran. Kalau hargamu masih di bawah pasaran, aplikasi menyarankan harga baru supaya untung naik tapi tetap bersaing. Kalau harga jual di bawah modal, muncul peringatan rugi.
 - **Catat jualan harian**: porsi dibuat, terjual, dan sisa. Stok bahan berkurang otomatis sesuai resep.
 - **Sesuaikan stok**: isi sisa bahan sebenarnya, selisihnya dicatat sebagai bahan susut/terbuang.
