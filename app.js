@@ -443,7 +443,16 @@ function viewDaftarBelanja(opsiBahan, opsiSatuan) {
     </div>`;
   }).join('');
 
-  let html = `<div class="card">
+  let html = `<form class="card" data-form="rencana">
+    <h2 style="margin-top:0">Tambah ke daftar</h2>
+    ${fieldBahan('r', opsiBahan, opsiSatuan)}
+    <label for="r-jml">Jumlah (boleh dikosongkan)</label>
+    <input id="r-jml" name="jumlah" inputmode="decimal" placeholder="mis. 2">
+    <button class="btn primary block" type="submit">Tambah ke daftar</button>
+    ${state.bahan.length ? `<button type="button" class="btn block" data-action="rencana-semua-bahan">Tambah semua bahan yang biasa dibeli</button>` : ''}
+  </form>
+
+  <div class="card">
     <h2 style="margin-top:0">Daftar belanja</h2>
     <p class="muted">Susun daftar di rumah, harga dikosongkan dulu. Di pasar, isi jumlah dan harga yang dibayar, lalu tekan ✓.</p>`;
 
@@ -458,16 +467,7 @@ function viewDaftarBelanja(opsiBahan, opsiSatuan) {
   } else {
     html += `<p class="muted"><i>Daftar masih kosong.</i></p>`;
   }
-  html += `</div>
-
-  <form class="card" data-form="rencana">
-    <h2 style="margin-top:0">Tambah ke daftar</h2>
-    ${fieldBahan('r', opsiBahan, opsiSatuan)}
-    <label for="r-jml">Jumlah (boleh dikosongkan)</label>
-    <input id="r-jml" name="jumlah" inputmode="decimal" placeholder="mis. 2">
-    <button class="btn primary block" type="submit">Tambah ke daftar</button>
-    ${state.bahan.length ? `<button type="button" class="btn block" data-action="rencana-semua-bahan">Tambah semua bahan yang biasa dibeli</button>` : ''}
-  </form>`;
+  html += `</div>`;
   return html;
 }
 
