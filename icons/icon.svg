@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#c2410c"/>
+  <path d="M96 236h320c0 88-72 160-160 160S96 324 96 236z" fill="#fff7ed"/>
+  <rect x="88" y="220" width="336" height="28" rx="14" fill="#fff7ed"/>
+  <circle cx="200" cy="200" r="34" fill="#fdba74"/>
+  <circle cx="268" cy="188" r="38" fill="#fdba74"/>
+  <circle cx="330" cy="204" r="30" fill="#fdba74"/>
+  <path d="M184 128c-10-18 10-30 0-48M256 120c-10-18 10-30 0-48M328 128c-10-18 10-30 0-48" stroke="#fff7ed" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <text x="256" y="350" text-anchor="middle" font-family="Arial, sans-serif" font-weight="700" font-size="84" fill="#c2410c">Rp</text>
+</svg>

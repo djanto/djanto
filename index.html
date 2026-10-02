@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Dagangku</title>
+  <meta name="description" content="Catat belanja bahan, hitung modal per porsi, dan lihat untung harian untuk pedagang makanan.">
+  <meta name="theme-color" content="#c2410c">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon.svg" alt="" width="32" height="32">
+      <div>
+        <strong>Dagangku</strong>
+        <small id="nama-usaha"></small>
+      </div>
+    </div>
+    <button class="icon-btn" data-nav="pengaturan" aria-label="Pengaturan">⚙️</button>
+  </header>
+
+  <main id="app" tabindex="-1"></main>
+
+  <nav class="bottomnav" aria-label="Menu utama">
+    <button data-nav="beranda"><span>🏠</span>Beranda</button>
+    <button data-nav="belanja"><span>🛒</span>Belanja</button>
+    <button data-nav="menu"><span>🍜</span>Menu</button>
+    <button data-nav="jualan"><span>💰</span>Jualan</button>
+    <button data-nav="laporan"><span>📊</span>Laporan</button>
+  </nav>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
